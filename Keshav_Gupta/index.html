@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Solar System</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      font-family: Arial, sans-serif;
+    }
+    #control-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      color: white;
+      border-radius: 10px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    label, input[type=range] {
+      display: block;
+      margin-bottom: 8px;
+    }
+    .label {
+      color: white;
+      text-align: center;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="control-panel"></div>
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.PointLight(0xffffff, 1.5);
+    light.position.set(0, 0, 0);
+    scene.add(light);
+
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(2, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0xFDB813 })
+    );
+    scene.add(sun);
+
+    const planetData = [
+      { name: 'Mercury', color: 0xaaaaff, size: 0.3, distance: 5, speed: 0.04 },
+      { name: 'Venus',   color: 0xffcc99, size: 0.5, distance: 7, speed: 0.03 },
+      { name: 'Earth',   color: 0x3399ff, size: 0.5, distance: 9, speed: 0.02 },
+      { name: 'Mars',    color: 0xff3300, size: 0.4, distance: 11, speed: 0.018 },
+      { name: 'Jupiter', color: 0xff9966, size: 1.2, distance: 15, speed: 0.01 },
+      { name: 'Saturn',  color: 0xffcc66, size: 1,   distance: 18, speed: 0.008 },
+      { name: 'Uranus',  color: 0x66ffff, size: 0.8, distance: 21, speed: 0.006 },
+      { name: 'Neptune', color: 0x6666ff, size: 0.8, distance: 24, speed: 0.005 }
+    ];
+
+    const planets = [];
+    const orbitAngles = [];
+    const speeds = {};
+    const labels = [];
+
+    // Add stars background
+    const starGeometry = new THREE.BufferGeometry();
+    const starVertices = [];
+    for (let i = 0; i < 10000; i++) {
+      const x = (Math.random() - 0.5) * 2000;
+      const y = (Math.random() - 0.5) * 2000;
+      const z = (Math.random() - 0.5) * 2000;
+      starVertices.push(x, y, z);
+    }
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starMaterial = new THREE.PointsMaterial({ color: 0xffffff });
+    const starField = new THREE.Points(starGeometry, starMaterial);
+    scene.add(starField);
+
+    planetData.forEach(data => {
+      const geometry = new THREE.SphereGeometry(data.size, 32, 32);
+      const material = new THREE.MeshStandardMaterial({ color: data.color });
+      const planet = new THREE.Mesh(geometry, material);
+      planet.name = data.name;
+      scene.add(planet);
+      planets.push({ mesh: planet, ...data });
+      orbitAngles.push(Math.random() * Math.PI * 2);
+      speeds[data.name] = data.speed;
+
+      // Add label
+      const div = document.createElement('div');
+      div.className = 'label';
+      div.textContent = data.name;
+      div.style.position = 'absolute';
+      div.style.pointerEvents = 'none';
+      document.body.appendChild(div);
+      labels.push(div);
+    });
+
+    camera.position.z = 40;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hovered = null;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!isPaused) {
+        const delta = clock.getDelta();
+        planets.forEach((planet, i) => {
+          orbitAngles[i] += speeds[planet.name] * delta * 60;
+          planet.mesh.position.set(
+            Math.cos(orbitAngles[i]) * planet.distance,
+            0,
+            Math.sin(orbitAngles[i]) * planet.distance
+          );
+
+          // Update label position
+          const vector = planet.mesh.position.clone().project(camera);
+          const x = (vector.x + 1) / 2 * window.innerWidth;
+          const y = (-vector.y + 1) / 2 * window.innerHeight;
+          labels[i].style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
+        });
+      }
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(planets.map(p => p.mesh));
+      if (intersects.length > 0) {
+        hovered = intersects[0].object.name;
+        document.body.style.cursor = 'pointer';
+      } else {
+        hovered = null;
+        document.body.style.cursor = 'default';
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    const clock = new THREE.Clock();
+    let isPaused = false;
+
+    animate();
+
+    // Control panel
+    const panel = document.getElementById('control-panel');
+    planetData.forEach(data => {
+      const label = document.createElement('label');
+      label.innerText = `${data.name} Speed:`;
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.min = 0.001;
+      input.max = 0.1;
+      input.step = 0.001;
+      input.value = data.speed;
+      input.oninput = () => { speeds[data.name] = parseFloat(input.value); };
+      panel.appendChild(label);
+      panel.appendChild(input);
+    });
+
+    // Pause/Resume toggle
+    const toggleButton = document.createElement('button');
+    toggleButton.innerText = 'Pause';
+    toggleButton.style.marginTop = '10px';
+    toggleButton.onclick = () => {
+      isPaused = !isPaused;
+      toggleButton.innerText = isPaused ? 'Resume' : 'Pause';
+    };
+    panel.appendChild(toggleButton);
+
+    // Zoom on click
+    window.addEventListener('click', () => {
+      if (hovered) {
+        const target = planets.find(p => p.name === hovered);
+        if (target) {
+          camera.position.set(
+            target.mesh.position.x + 3,
+            target.mesh.position.y + 3,
+            target.mesh.position.z + 3
+          );
+          camera.lookAt(target.mesh.position);
+        }
+      }
+    });
+
+    window.addEventListener('mousemove', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
